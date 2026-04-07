@@ -1,0 +1,41 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Database files (SQLite)
+*.db
+*.sqlite3
+
+# Environment secrets — NEVER commit these
+backend/.env
+.env
+
+# ── Node / Vite ──────────────────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+
+# Build output
+dist/
+frontend/dist/
+build/
+
+# Vite environment files (contain secrets)
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# ── OS / Editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
