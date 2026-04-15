@@ -279,7 +279,11 @@ function AppInner() {
         />
       )}
       {adminOpen && (
-        <AdminPanel onClose={() => setAdminOpen(false)} onBeachRemoved={handleBeachRemoved} />
+        <AdminPanel
+          onClose={() => setAdminOpen(false)}
+          onBeachRemoved={handleBeachRemoved}
+          onBeachAdded={handleBeachAdded}
+        />
       )}
     </div>
   )

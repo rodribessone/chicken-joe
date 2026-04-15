@@ -181,6 +181,18 @@ async def get_reports_history(beach_id: str, days_back: int = 7, limit: int = 40
         return [{**dict(row), "tags": json.loads(row["tags"])} for row in rows]
 
 
+async def get_all_reports_admin(limit: int = 50) -> list[dict]:
+    """Admin: all recent reports across all beaches."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            _REPORT_SELECT + _REPORT_GROUP + "ORDER BY r.created_at DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [{**dict(row), "tags": json.loads(row["tags"])} for row in rows]
+
+
 async def get_recent_tags(beach_id: str, limit: int = 20) -> list[str]:
     """Today's tags for surf score adjustment. Falls back to yesterday if none today."""
     reports = await get_reports_today(beach_id, limit=limit)
@@ -215,6 +227,17 @@ async def get_suggestions(status: str = "pending") -> list[dict]:
         )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+
+async def reject_suggestion(suggestion_id: int) -> bool:
+    """Delete a pending suggestion (reject it)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM beach_suggestions WHERE id = ? AND status = 'pending'",
+            (suggestion_id,),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def approve_suggestion(suggestion_id: int) -> dict | None:

@@ -141,9 +141,11 @@ async def _resolve_beach(beach_id: str) -> dict | None:
     return None
 
 
-async def _require_admin(x_admin_key: str = Header(..., description="Admin API key")):
-    if x_admin_key != ADMIN_KEY:
-        raise HTTPException(status_code=403, detail="Invalid admin key.")
+async def _require_admin(current_user: dict = Depends(get_current_user)):
+    """Allow access only to users with is_admin=True in their JWT."""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return current_user
 
 
 # ---------------------------------------------------------------------------
@@ -511,8 +513,8 @@ async def suggest_beach(payload: BeachSuggestionCreate):
 # ---------------------------------------------------------------------------
 
 @app.get("/admin/flags", response_model=list[BeachFlagAdmin], tags=["admin"])
-async def admin_list_flags(_: None = Depends(_require_admin)):
-    """List all beach flags. Requires X-Admin-Key header."""
+async def admin_list_flags(_: dict = Depends(_require_admin)):
+    """List all beach flags. Requires admin JWT."""
     rows = await get_all_flags()
     return [
         BeachFlagAdmin(
@@ -526,7 +528,7 @@ async def admin_list_flags(_: None = Depends(_require_admin)):
 
 
 @app.post("/admin/flags/{flag_id}/dismiss", tags=["admin"])
-async def admin_dismiss_flag(flag_id: int = Path(...), _: None = Depends(_require_admin)):
+async def admin_dismiss_flag(flag_id: int = Path(...), _: dict = Depends(_require_admin)):
     """Dismiss a beach flag without removing the beach. Requires X-Admin-Key header."""
     ok = await dismiss_flag(flag_id)
     if not ok:
@@ -537,7 +539,7 @@ async def admin_dismiss_flag(flag_id: int = Path(...), _: None = Depends(_requir
 @app.delete("/admin/beaches/{beach_id}", tags=["admin"])
 async def admin_remove_beach(
     beach_id: str = Path(...),
-    _: None = Depends(_require_admin),
+    _: dict = Depends(_require_admin),
 ):
     """Remove a community beach and all its flags. Requires X-Admin-Key header."""
     ok = await delete_community_beach(beach_id)
@@ -547,8 +549,8 @@ async def admin_remove_beach(
 
 
 @app.get("/admin/suggestions", response_model=list[BeachSuggestion], tags=["admin"])
-async def admin_list_suggestions(_: None = Depends(_require_admin)):
-    """List pending beach suggestions. Requires X-Admin-Key header."""
+async def admin_list_suggestions(_: dict = Depends(_require_admin)):
+    """List pending beach suggestions. Requires admin JWT."""
     rows = await get_suggestions(status="pending")
     return [
         BeachSuggestion(
@@ -564,13 +566,59 @@ async def admin_list_suggestions(_: None = Depends(_require_admin)):
 @app.post("/admin/suggestions/{suggestion_id}/approve", tags=["admin"])
 async def admin_approve_suggestion(
     suggestion_id: int = Path(...),
-    _: None = Depends(_require_admin),
+    _: dict = Depends(_require_admin),
 ):
-    """Approve a beach suggestion. Requires X-Admin-Key header."""
+    """Approve a beach suggestion. Requires admin JWT."""
     result = await approve_suggestion(suggestion_id)
     if not result:
         raise HTTPException(status_code=404, detail="Suggestion not found or already processed.")
     return {"message": f"Beach '{result['name']}' approved and added."}
+
+
+@app.delete("/admin/suggestions/{suggestion_id}", status_code=204, tags=["admin"])
+async def admin_reject_suggestion(
+    suggestion_id: int = Path(...),
+    _: dict = Depends(_require_admin),
+):
+    """Reject (delete) a beach suggestion. Requires admin JWT."""
+    from database import reject_suggestion
+    ok = await reject_suggestion(suggestion_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Suggestion not found.")
+
+
+@app.get("/admin/reports", tags=["admin"])
+async def admin_list_reports(
+    limit: int = 50,
+    _: dict = Depends(_require_admin),
+):
+    """List recent reports across all beaches. Requires admin JWT."""
+    from database import get_all_reports_admin
+    rows = await get_all_reports_admin(limit=limit)
+    return [
+        {
+            "id":         r["id"],
+            "beach_id":   r["beach_id"],
+            "beach_name": r["beach_name"],
+            "text":       r["text"],
+            "tags":       r["tags"],
+            "username":   r.get("username"),
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
+@app.delete("/admin/reports/{report_id}", status_code=204, tags=["admin"])
+async def admin_delete_report(
+    report_id: int = Path(...),
+    _: dict = Depends(_require_admin),
+):
+    """Force-delete any report (admin only). Requires admin JWT."""
+    report = await get_report_by_id(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    await delete_report(report_id)
 
 
 # ---------------------------------------------------------------------------

@@ -80,10 +80,17 @@ export const api = {
   updateReport:   (reportId, payload)        => patch(`/reports/${reportId}`, payload),
   deleteReport:   (reportId)                 => del(`/reports/${reportId}`),
 
-  // Admin
-  adminGetFlags:    ()                       => get('/admin/flags'),
-  adminDismissFlag: (flagId)                 => post(`/admin/flags/${flagId}/dismiss`, {}),
-  adminRemoveBeach: (beachId)               => del(`/admin/beaches/${beachId}`),
+  // Admin — beach flags
+  adminGetFlags:          ()             => get('/admin/flags'),
+  adminDismissFlag:       (flagId)       => post(`/admin/flags/${flagId}/dismiss`, {}),
+  adminRemoveBeach:       (beachId)      => del(`/admin/beaches/${beachId}`),
+  // Admin — suggestions
+  adminGetSuggestions:    ()             => get('/admin/suggestions'),
+  adminApproveSuggestion: (id)           => post(`/admin/suggestions/${id}/approve`, {}),
+  adminRejectSuggestion:  (id)           => del(`/admin/suggestions/${id}`),
+  // Admin — reports
+  adminGetReports:        ()             => get('/admin/reports'),
+  adminDeleteReport:      (id)           => del(`/admin/reports/${id}`),
 
   // Auth
   login:          (username, password)       => postForm('/auth/login', { username, password }),
