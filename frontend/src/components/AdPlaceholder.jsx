@@ -1,12 +1,21 @@
-import { useT } from '../i18n/LangContext'
+import { useEffect } from 'react'
 
 export default function AdPlaceholder() {
-  const t = useT()
+  useEffect(() => {
+    try {
+      (window.adsbygoogle = window.adsbygoogle || []).push({})
+    } catch {}
+  }, [])
+
   return (
-    <div className="mt-4 h-16 bg-white/5 border border-dashed border-white/15 rounded-2xl flex items-center justify-center">
-      <span className="text-white/25 text-xs uppercase tracking-widest font-medium">
-        {t('ad.label')}
-      </span>
+    <div className="mt-4">
+      <ins
+        className="adsbygoogle"
+        style={{ display: 'block' }}
+        data-ad-client="ca-pub-5172957442956044"
+        data-ad-format="auto"
+        data-full-width-responsive="true"
+      />
     </div>
   )
 }

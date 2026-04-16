@@ -63,7 +63,7 @@ export default function BeachTabs({ beaches, selectedId, onSelect, allConditions
       {/* Add beach — always visible, below the scroll strip */}
       <button
         onClick={onAdd}
-        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl mb-5
                    border border-dashed border-white/20 text-white/50
                    hover:border-seafoam/50 hover:text-seafoam hover:bg-seafoam/5
                    active:scale-[.99] transition-all duration-150 text-sm font-medium"
