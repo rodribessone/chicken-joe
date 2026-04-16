@@ -7,6 +7,7 @@ Tables:
 """
 
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 import aiosqlite
@@ -14,7 +15,7 @@ import aiosqlite
 # Queensland: UTC+10, no daylight saving
 AEST = timezone(timedelta(hours=10))
 
-DB_PATH = "chicken_joe.db"
+DB_PATH = os.getenv("DATABASE_PATH", "chicken_joe.db")
 
 
 # ---------------------------------------------------------------------------
