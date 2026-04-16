@@ -631,8 +631,9 @@ async def list_tags():
 
 @app.post("/admin/make-admin-DELETEME")
 async def make_admin_once(username: str):
+    from database import DB_PATH
     import aiosqlite
-    async with aiosqlite.connect("chicken_joe.db") as db:
+    async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE users SET is_admin = 1 WHERE username = ?", (username,))
         await db.commit()
         cur = await db.execute("SELECT username, is_admin FROM users WHERE username = ?", (username,))
