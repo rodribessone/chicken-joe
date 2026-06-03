@@ -1,6 +1,10 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from fastapi import Depends, FastAPI, HTTPException, Header, Path, Security
 from fastapi.middleware.cors import CORSMiddleware
@@ -247,6 +251,7 @@ async def get_conditions(beach_id: str = Path(...)):
     try:
         data = await fetch_conditions(beach["lat"], beach["lon"])
     except Exception as exc:
+        logger.error("fetch_conditions failed for %s: %r", beach_id, exc, exc_info=True)
         raise HTTPException(status_code=502, detail=f"Failed to fetch marine data: {exc}")
 
     recent_tags = await get_recent_tags(beach_id)
@@ -286,6 +291,7 @@ async def get_forecast(beach_id: str = Path(...)):
     try:
         days = await fetch_forecast(beach["lat"], beach["lon"], beach["ocean_facing"])
     except Exception as exc:
+        logger.error("fetch_forecast failed for %s: %r", beach_id, exc, exc_info=True)
         raise HTTPException(status_code=502, detail=f"Failed to fetch forecast: {exc}")
     return days
 
