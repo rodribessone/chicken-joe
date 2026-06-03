@@ -7,10 +7,30 @@ Forecast API docs: https://open-meteo.com/en/docs
 No API key required.
 """
 
+import asyncio
 import math
+import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
+
+# ---------------------------------------------------------------------------
+# Simple in-memory TTL cache
+# ---------------------------------------------------------------------------
+
+_cache: dict[str, tuple[float, object]] = {}   # key → (expires_at, data)
+_cache_lock = asyncio.Lock()
+
+async def _cache_get(key: str):
+    async with _cache_lock:
+        entry = _cache.get(key)
+        if entry and time.monotonic() < entry[0]:
+            return entry[1]
+    return None
+
+async def _cache_set(key: str, data, ttl_seconds: int):
+    async with _cache_lock:
+        _cache[key] = (time.monotonic() + ttl_seconds, data)
 
 MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -40,8 +60,13 @@ def _degrees_to_compass(deg: float) -> str:
 
 
 async def fetch_conditions(lat: float, lon: float) -> dict:
-    """Fetch current marine + wind conditions from Open-Meteo."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    """Fetch current marine + wind conditions from Open-Meteo. Cached for 10 min."""
+    key = f"conditions:{lat:.3f},{lon:.3f}"
+    cached = await _cache_get(key)
+    if cached is not None:
+        return cached
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
         marine_resp, wind_resp = await _fetch_both(client, lat, lon)
 
     marine = marine_resp["current"]
@@ -61,7 +86,7 @@ async def fetch_conditions(lat: float, lon: float) -> dict:
     compass = _degrees_to_compass(wind_dir)
     wind_label = f"{compass} {wind_speed:.0f} km/h"
 
-    return {
+    result = {
         "wave": {
             "height_m": round(wave_height, 2),
             "period_s": round(wave_period, 1),
@@ -77,13 +102,20 @@ async def fetch_conditions(lat: float, lon: float) -> dict:
         },
         "water_temp_c": round(water_temp, 1) if water_temp is not None else None,
     }
+    await _cache_set(key, result, ttl_seconds=600)  # cache 10 minutes
+    return result
 
 
 async def fetch_forecast(lat: float, lon: float, ocean_facing_deg: int) -> list[dict]:
     """
-    Fetch 7-day hourly surf forecast from Open-Meteo.
+    Fetch 7-day hourly surf forecast from Open-Meteo. Cached for 1 hour.
     Returns a list of day objects, each with hourly surf data + daily summary.
     """
+    key = f"forecast:{lat:.3f},{lon:.3f}"
+    cached = await _cache_get(key)
+    if cached is not None:
+        return cached
+
     import asyncio
     from datetime import timezone as tz
 
@@ -179,6 +211,7 @@ async def fetch_forecast(lat: float, lon: float, ocean_facing_deg: int) -> list[
             "best_hour":  best["hour"],
         })
 
+    await _cache_set(key, result, ttl_seconds=3600)  # cache 1 hour
     return result
 
 
