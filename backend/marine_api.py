@@ -15,11 +15,20 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 # ---------------------------------------------------------------------------
-# Simple in-memory TTL cache
+# Simple in-memory TTL cache + rate-limit semaphore
 # ---------------------------------------------------------------------------
 
 _cache: dict[str, tuple[float, object]] = {}   # key → (expires_at, data)
 _cache_lock = asyncio.Lock()
+# Only 1 concurrent request to Open-Meteo to avoid 429 rate limiting.
+# Subsequent identical requests hit the cache instead.
+_api_sem: asyncio.Semaphore | None = None
+
+def _get_sem() -> asyncio.Semaphore:
+    global _api_sem
+    if _api_sem is None:
+        _api_sem = asyncio.Semaphore(1)
+    return _api_sem
 
 async def _cache_get(key: str):
     async with _cache_lock:
@@ -140,7 +149,8 @@ async def fetch_forecast(lat: float, lon: float, ocean_facing_deg: int) -> list[
             "wind_speed_unit": "kmh",
             "timezone": "Australia/Brisbane",
         })
-        marine_resp, wind_resp = await asyncio.gather(marine_task, wind_task)
+        async with _get_sem():
+            marine_resp, wind_resp = await asyncio.gather(marine_task, wind_task)
         marine_resp.raise_for_status()
         wind_resp.raise_for_status()
 
@@ -216,8 +226,7 @@ async def fetch_forecast(lat: float, lon: float, ocean_facing_deg: int) -> list[
 
 
 async def _fetch_both(client: httpx.AsyncClient, lat: float, lon: float):
-    import asyncio
-
+    """Fetch marine + wind in parallel, but serialized vs other beaches via semaphore."""
     marine_task = client.get(MARINE_URL, params={
         "latitude": lat,
         "longitude": lon,
@@ -232,7 +241,8 @@ async def _fetch_both(client: httpx.AsyncClient, lat: float, lon: float):
         "wind_speed_unit": "kmh",
     })
 
-    marine_resp, wind_resp = await asyncio.gather(marine_task, wind_task)
+    async with _get_sem():
+        marine_resp, wind_resp = await asyncio.gather(marine_task, wind_task)
     marine_resp.raise_for_status()
     wind_resp.raise_for_status()
     return marine_resp.json(), wind_resp.json()
