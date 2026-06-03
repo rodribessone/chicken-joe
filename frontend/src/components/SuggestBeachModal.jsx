@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
 import { useT } from '../i18n/LangContext'
 
-const STATES = ['QLD', 'NSW', 'VIC', 'WA', 'SA', 'TAS', 'NT', 'ACT']
-
 const STATE_MAP = {
   'Queensland': 'QLD', 'New South Wales': 'NSW', 'Victoria': 'VIC',
   'Western Australia': 'WA', 'South Australia': 'SA', 'Tasmania': 'TAS',
@@ -25,8 +23,8 @@ function useNominatim(query) {
 
     timeoutRef.current = setTimeout(async () => {
       try {
-        const q   = encodeURIComponent(query + ' australia')
-        const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&countrycodes=au&limit=6&addressdetails=1`
+        const q   = encodeURIComponent(query)
+        const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=6&addressdetails=1`
         const res = await fetch(url, { headers: { 'User-Agent': 'ChickenJoe/1.0 surf-conditions-app' } })
         setResults(await res.json())
       } catch {
@@ -45,7 +43,9 @@ function useNominatim(query) {
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function extractState(result) {
-  return STATE_MAP[result.address?.state] ?? 'QLD'
+  const a = result.address ?? {}
+  if (a.state && STATE_MAP[a.state]) return STATE_MAP[a.state]
+  return a.state || a.region || a.country || ''
 }
 
 function shortName(displayName) {
@@ -93,7 +93,7 @@ export default function SuggestBeachModal({ onClose, prefillName = '' }) {
   // Step 2 — confirm
   const [selected, setSelected] = useState(null)
   const [name, setName]         = useState('')
-  const [state, setState]       = useState('QLD')
+  const [state, setState]       = useState('')
   const [notes, setNotes]       = useState('')
 
   // Submission
@@ -253,10 +253,14 @@ function ConfirmStep({ t, selected, name, setName, state, setState, notes, setNo
           />
         </Field>
 
-        <Field label={t('suggest.state')}>
-          <select value={state} onChange={e => setState(e.target.value)} className={inputClass}>
-            {STATES.map(s => <option key={s} value={s} className="bg-navy">{s}</option>)}
-          </select>
+        <Field label="Region / Country">
+          <input
+            type="text"
+            value={state}
+            onChange={e => setState(e.target.value)}
+            placeholder="e.g. QLD, California, Japan…"
+            className={inputClass}
+          />
         </Field>
 
         <Field label={t('suggest.notes')}>

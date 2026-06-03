@@ -246,6 +246,7 @@ function AppInner() {
           historyLoading={historyLoading}
           onLoadHistory={handleLoadHistory}
         />
+        <SiteFooter />
       </main>
 
       {/* Floating report button */}
@@ -294,5 +295,21 @@ function PlusIcon() {
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
     </svg>
+  )
+}
+
+function SiteFooter() {
+  return (
+    <footer className="mt-10 pt-6 border-t border-white/10 text-center">
+      <nav className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm">
+        <a href="/about.html" className="text-white/50 hover:text-seafoam transition-colors">About</a>
+        <a href="/surf-guide.html" className="text-white/50 hover:text-seafoam transition-colors">How to read conditions</a>
+        <a href="/privacy.html" className="text-white/50 hover:text-seafoam transition-colors">Privacy</a>
+      </nav>
+      <p className="text-white/25 text-xs mt-4 max-w-md mx-auto leading-relaxed">
+        Free community surf conditions, powered by Open-Meteo. Forecasts are estimates —
+        always use your own judgement in the water. 🤙
+      </p>
+    </footer>
   )
 }

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>About Chicken Joe — Free Community Surf Conditions</title>
+  <meta name="description" content="Chicken Joe is a free, community-driven surf conditions app. Learn how it works, where the data comes from, and how surfers can add beaches and share live reports." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    :root { --navy:#062840; --navy-light:#0c3a59; --seafoam:#5fd3c4; --text:#e8f1f5; --muted:#9fb6c4; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--navy); color:var(--text); font-family:'Outfit',system-ui,sans-serif; line-height:1.7; }
+    .wrap { max-width:760px; margin:0 auto; padding:32px 20px 80px; }
+    header.top { display:flex; align-items:center; gap:10px; margin-bottom:32px; }
+    header.top a { color:var(--seafoam); text-decoration:none; font-weight:700; font-size:18px; }
+    h1 { font-size:34px; font-weight:900; line-height:1.2; margin:0 0 8px; }
+    .lede { color:var(--muted); font-size:18px; margin-bottom:36px; }
+    h2 { font-size:24px; font-weight:800; margin:40px 0 12px; color:var(--seafoam); }
+    p, li { color:var(--text); }
+    ul { padding-left:20px; }
+    li { margin-bottom:8px; }
+    .card { background:var(--navy-light); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:20px 22px; margin:18px 0; }
+    footer { margin-top:60px; padding-top:24px; border-top:1px solid rgba(255,255,255,.1); color:var(--muted); font-size:14px; }
+    footer a { color:var(--seafoam); }
+    .back { display:inline-block; margin-top:24px; background:var(--seafoam); color:var(--navy); font-weight:700; padding:12px 22px; border-radius:12px; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top"><a href="/">🤙 Chicken Joe</a></header>
+
+    <h1>About Chicken Joe</h1>
+    <p class="lede">A free, community-driven surf-conditions tool built by surfers, for surfers. No paywalls, no sign-up required to check the waves.</p>
+
+    <h2>What it does</h2>
+    <p>Chicken Joe gives you a quick, honest read on whether it's worth heading to the beach. For any spot you'll see the current wave height, swell period, wind, water temperature and an at-a-glance surf score from 0 to 10, plus a 7-day forecast so you can plan ahead. New to all those terms? Our <a href="/surf-guide.html">surf conditions guide</a> explains each one in plain English.</p>
+
+    <h2>Where the data comes from</h2>
+    <p>Marine and weather data is sourced from <strong>Open-Meteo</strong>, an open, free weather API. We combine the wave model (height, period, direction) with local wind data and each beach's orientation to the ocean to calculate the surf score. Because the score factors in whether the wind is offshore or onshore for that specific beach, it's more useful than raw numbers alone.</p>
+
+    <h2>Community reports</h2>
+    <p>Forecasts are only half the story — nothing beats eyes on the water. Registered users can post quick live reports with tags like "clean", "messy", "crowded" or "offshore", and vote on each other's reports. These community observations help everyone get a real-time picture that a model simply can't provide.</p>
+
+    <h2>Add any beach in the world</h2>
+    <p>Can't find your local? Anyone can add a beach in seconds: search for it on the map, confirm the location, and it goes live instantly with full conditions and forecast. Chicken Joe works for surf spots anywhere on the planet — from the Sunshine Coast to California to Japan.</p>
+
+    <div class="card">
+      <h2 style="margin-top:0">Honest limitations</h2>
+      <ul>
+        <li>Forecasts are <strong>estimates</strong> from a global model — local effects (sandbanks, headlands, reefs) aren't fully captured.</li>
+        <li>Tide predictions are approximate and best treated as a guide.</li>
+        <li>Always use your own judgement, check official hazard signage, and never rely solely on an app for safety decisions in the water.</li>
+      </ul>
+    </div>
+
+    <a class="back" href="/">← Back to live conditions</a>
+
+    <footer>
+      <p><a href="/">Home</a> · <a href="/surf-guide.html">Surf guide</a> · <a href="/privacy.html">Privacy</a></p>
+      <p>Chicken Joe is a free community surf-conditions tool.</p>
+    </footer>
+  </div>
+</body>
+</html>

@@ -14,8 +14,7 @@ import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
 import { useT } from '../i18n/LangContext'
 
-const STATES = ['QLD', 'NSW', 'VIC', 'WA', 'SA', 'TAS', 'NT', 'ACT']
-
+// Map Australian state names to their short codes (nice-to-have for AU beaches).
 const STATE_MAP = {
   Queensland: 'QLD', 'New South Wales': 'NSW', Victoria: 'VIC',
   'Western Australia': 'WA', 'South Australia': 'SA', Tasmania: 'TAS',
@@ -37,10 +36,10 @@ function useNominatim(query) {
     clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       try {
-        const q   = encodeURIComponent(query.trim() + ' australia')
+        const q   = encodeURIComponent(query.trim())
         const url =
           `https://nominatim.openstreetmap.org/search` +
-          `?q=${q}&format=json&countrycodes=au&limit=6&addressdetails=1`
+          `?q=${q}&format=json&limit=6&addressdetails=1`
         const res = await fetch(url, {
           headers: { 'User-Agent': 'ChickenJoe/1.0 surf-conditions-app' },
         })
@@ -62,8 +61,13 @@ function useNominatim(query) {
 
 const slugFirstPart = (displayName) => displayName.split(',')[0].trim()
 
-const detectState = (result) =>
-  STATE_MAP[result.address?.state] ?? 'QLD'
+// Pick a sensible region label from the geocoding result:
+// AU state code → full state/region → country. Falls back to empty.
+const detectState = (result) => {
+  const a = result.address ?? {}
+  if (a.state && STATE_MAP[a.state]) return STATE_MAP[a.state]
+  return a.state || a.region || a.country || ''
+}
 
 const buildDescription = (result) => {
   const a = result.address ?? {}
@@ -114,7 +118,7 @@ export default function AddBeachModal({ onClose, prefillQuery = '', onAdded }) {
   /* step 2 – confirm */
   const [picked, setPicked]       = useState(null)   // Nominatim result
   const [name, setName]           = useState('')
-  const [state, setState]         = useState('QLD')
+  const [state, setState]         = useState('')
 
   /* submission */
   const [submitting, setSubmitting] = useState(false)
@@ -132,11 +136,12 @@ export default function AddBeachModal({ onClose, prefillQuery = '', onAdded }) {
 
   const handleAdd = async () => {
     if (!name.trim()) { setError('Beach name is required.'); return }
+    if (!state.trim()) { setError('Region / country is required.'); return }
     setSubmitting(true); setError(null)
     try {
       const beach = await api.addBeach({
         name:        name.trim(),
-        state,
+        state:       state.trim(),
         lat:         parseFloat(picked.lat),
         lon:         parseFloat(picked.lon),
         description: buildDescription(picked),
@@ -221,7 +226,7 @@ function SearchStep({ query, setQuery, results, loading, onPick }) {
         )}
       </div>
       <p className="text-white/25 text-xs px-1 mb-4">
-        e.g. Happy Valley Beach, Kings Beach, Snapper Rocks
+        Any beach worldwide — e.g. Snapper Rocks, Pipeline, Shonan
       </p>
 
       {loading && (
@@ -294,10 +299,14 @@ function ConfirmStep({ picked, name, setName, state, setState, onBack, onAdd, su
         </div>
 
         <div>
-          <label className={label}>State</label>
-          <select value={state} onChange={e => setState(e.target.value)} className={base}>
-            {STATES.map(s => <option key={s} value={s} className="bg-navy">{s}</option>)}
-          </select>
+          <label className={label}>Region / Country</label>
+          <input
+            type="text"
+            value={state}
+            onChange={e => setState(e.target.value)}
+            placeholder="e.g. QLD, California, Japan…"
+            className={base}
+          />
         </div>
       </div>
 

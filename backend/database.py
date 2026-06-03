@@ -17,6 +17,11 @@ AEST = timezone(timedelta(hours=10))
 
 DB_PATH = os.getenv("DATABASE_PATH", "chicken_joe.db")
 
+# Ensure the directory exists (needed when DATABASE_PATH points to a mounted volume)
+_db_dir = os.path.dirname(DB_PATH)
+if _db_dir:
+    os.makedirs(_db_dir, exist_ok=True)
+
 
 # ---------------------------------------------------------------------------
 # Init

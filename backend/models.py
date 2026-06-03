@@ -153,18 +153,18 @@ class VoteResponse(BaseModel):
 class BeachCreate(BaseModel):
     """Payload for immediately adding a new community beach."""
     name: str = Field(min_length=2, max_length=100)
-    state: Literal["QLD", "NSW", "VIC", "WA", "SA", "TAS", "NT", "ACT"]
-    lat: float = Field(ge=-45.0, le=-10.0, description="Australian latitude")
-    lon: float = Field(ge=112.0, le=155.0, description="Australian longitude")
+    state: str = Field(min_length=1, max_length=60, description="Region / state / country")
+    lat: float = Field(ge=-90.0, le=90.0, description="Latitude")
+    lon: float = Field(ge=-180.0, le=180.0, description="Longitude")
     description: str = Field(default="", max_length=300)
 
 
 class BeachSuggestionCreate(BaseModel):
     """Legacy: suggest a beach for admin review (kept for admin workflow)."""
     name: str = Field(min_length=2, max_length=100)
-    state: Literal["QLD", "NSW", "VIC", "WA", "SA", "TAS", "NT", "ACT"]
-    lat: float = Field(ge=-45.0, le=-10.0, description="Australian latitude range")
-    lon: float = Field(ge=112.0, le=155.0, description="Australian longitude range")
+    state: str = Field(min_length=1, max_length=60, description="Region / state / country")
+    lat: float = Field(ge=-90.0, le=90.0, description="Latitude")
+    lon: float = Field(ge=-180.0, le=180.0, description="Longitude")
     notes: str | None = Field(default=None, max_length=300)
 
 
