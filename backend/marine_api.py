@@ -8,38 +8,103 @@ No API key required.
 """
 
 import asyncio
+import logging
 import math
+import random
 import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
-# Simple in-memory TTL cache + rate-limit semaphore
+# In-memory cache (stale-while-error) + throttle + retry
+#
+# Open-Meteo rate-limits per source IP. On shared free hosting (Render) the
+# IP is shared with other tenants, so api.open-meteo.com frequently returns
+# 429 regardless of our own volume. To stay resilient we:
+#   1. Throttle outbound calls (1 at a time, with a min interval).
+#   2. Retry 429s with exponential backoff + jitter (the per-minute window
+#      refills quickly).
+#   3. Serve STALE cached data (up to HARD_TTL) if a refresh ultimately fails,
+#      so users see slightly-old data instead of an error.
 # ---------------------------------------------------------------------------
 
-_cache: dict[str, tuple[float, object]] = {}   # key → (expires_at, data)
+# key → (fresh_until, hard_until, data)
+_cache: dict[str, tuple[float, float, object]] = {}
 _cache_lock = asyncio.Lock()
-# Only 1 concurrent request to Open-Meteo to avoid 429 rate limiting.
-# Subsequent identical requests hit the cache instead.
-_api_sem: asyncio.Semaphore | None = None
 
-def _get_sem() -> asyncio.Semaphore:
-    global _api_sem
-    if _api_sem is None:
-        _api_sem = asyncio.Semaphore(1)
-    return _api_sem
+_HARD_TTL = 24 * 3600  # keep last-known-good data for 24h for stale fallback
 
-async def _cache_get(key: str):
+# Enforce a minimum gap between outbound calls (global throttle).
+_throttle_lock: asyncio.Lock | None = None
+_last_call_ts: float = 0.0
+_MIN_INTERVAL = 0.4  # seconds between outbound Open-Meteo calls
+
+
+def _get_throttle_lock() -> asyncio.Lock:
+    global _throttle_lock
+    if _throttle_lock is None:
+        _throttle_lock = asyncio.Lock()
+    return _throttle_lock
+
+
+async def _cache_get(key: str, allow_stale: bool = False):
     async with _cache_lock:
         entry = _cache.get(key)
-        if entry and time.monotonic() < entry[0]:
-            return entry[1]
+        if not entry:
+            return None
+        fresh_until, hard_until, data = entry
+        now = time.monotonic()
+        if now < fresh_until:
+            return data
+        if allow_stale and now < hard_until:
+            return data
     return None
+
 
 async def _cache_set(key: str, data, ttl_seconds: int):
     async with _cache_lock:
-        _cache[key] = (time.monotonic() + ttl_seconds, data)
+        now = time.monotonic()
+        _cache[key] = (now + ttl_seconds, now + _HARD_TTL, data)
+
+
+async def _get_with_retry(client: httpx.AsyncClient, url: str, params: dict,
+                          attempts: int = 4) -> httpx.Response:
+    """GET with throttle + exponential backoff on 429 / transient errors."""
+    global _last_call_ts
+    delay = 0.6
+    last_exc: Exception | None = None
+
+    for attempt in range(attempts):
+        # Throttle: ensure a minimum gap between outbound calls.
+        async with _get_throttle_lock():
+            wait = _MIN_INTERVAL - (time.monotonic() - _last_call_ts)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            _last_call_ts = time.monotonic()
+
+        try:
+            resp = await client.get(url, params=params)
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            await asyncio.sleep(delay + random.uniform(0, 0.3))
+            delay *= 2
+            continue
+
+        if resp.status_code == 429:
+            last_exc = httpx.HTTPStatusError(
+                "429 Too Many Requests", request=resp.request, response=resp
+            )
+            await asyncio.sleep(delay + random.uniform(0, 0.3))
+            delay *= 2
+            continue
+
+        resp.raise_for_status()
+        return resp
+
+    raise last_exc if last_exc else RuntimeError("request failed")
 
 MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -68,19 +133,7 @@ def _degrees_to_compass(deg: float) -> str:
     return dirs[idx]
 
 
-async def fetch_conditions(lat: float, lon: float) -> dict:
-    """Fetch current marine + wind conditions from Open-Meteo. Cached for 10 min."""
-    key = f"conditions:{lat:.3f},{lon:.3f}"
-    cached = await _cache_get(key)
-    if cached is not None:
-        return cached
-
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        marine_resp, wind_resp = await _fetch_both(client, lat, lon)
-
-    marine = marine_resp["current"]
-    wind = wind_resp["current"]
-
+def _build_conditions(marine: dict, wind: dict | None) -> dict:
     wave_height = marine.get("wave_height") or 0.0
     wave_dir = marine.get("wave_direction") or 0.0
     wave_period = marine.get("wave_period") or 0.0
@@ -88,6 +141,7 @@ async def fetch_conditions(lat: float, lon: float) -> dict:
     swell_period = marine.get("swell_wave_period")
     water_temp = marine.get("sea_surface_temperature")
 
+    wind = wind or {}
     wind_speed = wind.get("wind_speed_10m") or 0.0
     wind_dir = wind.get("wind_direction_10m") or 0.0
     wind_gusts = wind.get("wind_gusts_10m") or 0.0
@@ -95,7 +149,7 @@ async def fetch_conditions(lat: float, lon: float) -> dict:
     compass = _degrees_to_compass(wind_dir)
     wind_label = f"{compass} {wind_speed:.0f} km/h"
 
-    result = {
+    return {
         "wave": {
             "height_m": round(wave_height, 2),
             "period_s": round(wave_period, 1),
@@ -111,7 +165,45 @@ async def fetch_conditions(lat: float, lon: float) -> dict:
         },
         "water_temp_c": round(water_temp, 1) if water_temp is not None else None,
     }
-    await _cache_set(key, result, ttl_seconds=600)  # cache 10 minutes
+
+
+async def fetch_conditions(lat: float, lon: float) -> dict:
+    """
+    Fetch current marine + wind conditions from Open-Meteo. Cached for 10 min.
+    Resilient: serves stale data on failure; degrades to marine-only if the
+    (rate-limited) wind API is unavailable.
+    """
+    key = f"conditions:{lat:.3f},{lon:.3f}"
+    cached = await _cache_get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            marine_resp, wind_resp = await _fetch_both(client, lat, lon)
+        result = _build_conditions(marine_resp["current"], wind_resp["current"])
+        await _cache_set(key, result, ttl_seconds=600)  # 10 minutes
+        return result
+    except Exception as exc:
+        logger.warning("conditions fetch failed (%.3f,%.3f): %r", lat, lon, exc)
+
+    # 1) Serve stale data if we have any (up to 24h old).
+    stale = await _cache_get(key, allow_stale=True)
+    if stale is not None:
+        logger.info("serving STALE conditions for %.3f,%.3f", lat, lon)
+        return stale
+
+    # 2) Last resort: marine (waves) usually works even when wind is throttled.
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        marine_resp = await _get_with_retry(client, MARINE_URL, {
+            "latitude": lat, "longitude": lon,
+            "current": ",".join(MARINE_PARAMS),
+            "length_unit": "metric", "wind_speed_unit": "kmh",
+        })
+    result = _build_conditions(marine_resp.json()["current"], None)
+    # short TTL so we retry wind soon
+    await _cache_set(key, result, ttl_seconds=120)
+    logger.info("serving MARINE-ONLY conditions for %.3f,%.3f", lat, lon)
     return result
 
 
@@ -125,44 +217,51 @@ async def fetch_forecast(lat: float, lon: float, ocean_facing_deg: int) -> list[
     if cached is not None:
         return cached
 
-    import asyncio
-    from datetime import timezone as tz
-
     AEST = timezone(timedelta(hours=10))
 
     hourly_marine = ["wave_height", "wave_period", "wave_direction"]
     hourly_wind   = ["wind_speed_10m", "wind_direction_10m"]
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        marine_task = client.get(MARINE_URL, params={
-            "latitude": lat, "longitude": lon,
-            "hourly": ",".join(hourly_marine),
-            "forecast_days": 7,
-            "length_unit": "metric",
-            "wind_speed_unit": "kmh",
-            "timezone": "Australia/Brisbane",
-        })
-        wind_task = client.get(FORECAST_URL, params={
-            "latitude": lat, "longitude": lon,
-            "hourly": ",".join(hourly_wind),
-            "forecast_days": 7,
-            "wind_speed_unit": "kmh",
-            "timezone": "Australia/Brisbane",
-        })
-        async with _get_sem():
-            marine_resp, wind_resp = await asyncio.gather(marine_task, wind_task)
-        marine_resp.raise_for_status()
-        wind_resp.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            # Marine (waves) is essential.
+            marine_resp = await _get_with_retry(client, MARINE_URL, {
+                "latitude": lat, "longitude": lon,
+                "hourly": ",".join(hourly_marine),
+                "forecast_days": 7,
+                "length_unit": "metric",
+                "wind_speed_unit": "kmh",
+                "timezone": "Australia/Brisbane",
+            })
+            # Wind is best-effort — degrade to no-wind if it stays rate-limited.
+            try:
+                wind_resp = await _get_with_retry(client, FORECAST_URL, {
+                    "latitude": lat, "longitude": lon,
+                    "hourly": ",".join(hourly_wind),
+                    "forecast_days": 7,
+                    "wind_speed_unit": "kmh",
+                    "timezone": "Australia/Brisbane",
+                })
+                wind_h = wind_resp.json()["hourly"]
+            except Exception as exc:
+                logger.warning("forecast wind fetch failed (%.3f,%.3f): %r", lat, lon, exc)
+                wind_h = None
+    except Exception as exc:
+        logger.warning("forecast fetch failed (%.3f,%.3f): %r", lat, lon, exc)
+        stale = await _cache_get(key, allow_stale=True)
+        if stale is not None:
+            logger.info("serving STALE forecast for %.3f,%.3f", lat, lon)
+            return stale
+        raise
 
     marine_h = marine_resp.json()["hourly"]
-    wind_h   = wind_resp.json()["hourly"]
 
     times       = marine_h["time"]
     wave_heights = marine_h["wave_height"]
     wave_periods = marine_h["wave_period"]
     wave_dirs    = marine_h["wave_direction"]
-    wind_speeds  = wind_h["wind_speed_10m"]
-    wind_dirs    = wind_h["wind_direction_10m"]
+    wind_speeds  = wind_h["wind_speed_10m"]    if wind_h else [0.0] * len(times)
+    wind_dirs    = wind_h["wind_direction_10m"] if wind_h else [0.0] * len(times)
 
     # Group hours into days
     from collections import defaultdict
@@ -221,28 +320,21 @@ async def fetch_forecast(lat: float, lon: float, ocean_facing_deg: int) -> list[
             "best_hour":  best["hour"],
         })
 
-    await _cache_set(key, result, ttl_seconds=3600)  # cache 1 hour
+    # Full data caches 1h; partial (no wind) caches briefly so we retry soon.
+    await _cache_set(key, result, ttl_seconds=3600 if wind_h else 180)
     return result
 
 
 async def _fetch_both(client: httpx.AsyncClient, lat: float, lon: float):
-    """Fetch marine + wind in parallel, but serialized vs other beaches via semaphore."""
-    marine_task = client.get(MARINE_URL, params={
-        "latitude": lat,
-        "longitude": lon,
+    """Fetch marine + wind, each with throttle + retry. Both must succeed."""
+    marine_resp = await _get_with_retry(client, MARINE_URL, {
+        "latitude": lat, "longitude": lon,
         "current": ",".join(MARINE_PARAMS),
-        "length_unit": "metric",
-        "wind_speed_unit": "kmh",
+        "length_unit": "metric", "wind_speed_unit": "kmh",
     })
-    wind_task = client.get(FORECAST_URL, params={
-        "latitude": lat,
-        "longitude": lon,
+    wind_resp = await _get_with_retry(client, FORECAST_URL, {
+        "latitude": lat, "longitude": lon,
         "current": ",".join(WIND_PARAMS),
         "wind_speed_unit": "kmh",
     })
-
-    async with _get_sem():
-        marine_resp, wind_resp = await asyncio.gather(marine_task, wind_task)
-    marine_resp.raise_for_status()
-    wind_resp.raise_for_status()
     return marine_resp.json(), wind_resp.json()
