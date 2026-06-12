@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://chicken-joe.vercel.app/sitemap.xml
